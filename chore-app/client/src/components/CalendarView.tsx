@@ -1,10 +1,14 @@
-import React, { useState, useCallback } from 'react';
-import { Calendar, dateFnsLocalizer, Views, SlotInfo } from 'react-big-calendar';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Calendar, dateFnsLocalizer, Views, SlotInfo, View } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { ChoreInstance, Chore, Member } from '../types';
 import { completeInstance, uncompleteInstance, deleteChore } from '../api';
+
+const LS_MODE = 'calTimeMode';
+const LS_START = 'calTimeStart';
+const LS_END = 'calTimeEnd';
 
 const localizer = dateFnsLocalizer({
   format,
@@ -35,6 +39,20 @@ interface Props {
 
 export default function CalendarView({ instances, onRangeChange, onAddChore, onEditChore, onChanged, chores }: Props) {
   const [selectedEvent, setSelectedEvent] = useState<ChoreInstance | null>(null);
+  const [currentView, setCurrentView] = useState<View>(Views.MONTH);
+  const [timeMode, setTimeMode] = useState<'manual' | 'auto'>(
+    () => (localStorage.getItem(LS_MODE) as 'manual' | 'auto') ?? 'manual'
+  );
+  const [manualStart, setManualStart] = useState<number>(
+    () => parseInt(localStorage.getItem(LS_START) ?? '8', 10)
+  );
+  const [manualEnd, setManualEnd] = useState<number>(
+    () => parseInt(localStorage.getItem(LS_END) ?? '20', 10)
+  );
+
+  useEffect(() => { localStorage.setItem(LS_MODE, timeMode); }, [timeMode]);
+  useEffect(() => { localStorage.setItem(LS_START, String(manualStart)); }, [manualStart]);
+  useEffect(() => { localStorage.setItem(LS_END, String(manualEnd)); }, [manualEnd]);
 
   const events: CalEvent[] = instances.map(inst => {
     let start: Date, end: Date, allDay: boolean;
@@ -58,6 +76,18 @@ export default function CalendarView({ instances, onRangeChange, onAddChore, onE
       resource: inst,
     };
   });
+
+  const timedEvents = events.filter(e => !e.allDay);
+  const autoMinHour = timedEvents.length > 0
+    ? Math.max(0, Math.min(...timedEvents.map(e => e.start.getHours())) - 1)
+    : 8;
+  const autoMaxHour = timedEvents.length > 0
+    ? Math.min(23, Math.max(...timedEvents.map(e => e.end.getHours())) + 1)
+    : 20;
+  const minHour = timeMode === 'auto' ? autoMinHour : manualStart;
+  const maxHour = timeMode === 'auto' ? autoMaxHour : manualEnd;
+  const minTime = new Date(1970, 0, 1, minHour, 0, 0);
+  const maxTime = new Date(1970, 0, 1, maxHour, 0, 0);
 
   const eventStyleGetter = useCallback((event: CalEvent) => {
     const inst = event.resource;
@@ -142,20 +172,63 @@ export default function CalendarView({ instances, onRangeChange, onAddChore, onE
     onChanged();
   };
 
+  const isTimeView = currentView === Views.WEEK || currentView === Views.DAY;
+
+  const hourOptions = Array.from({ length: 24 }, (_, i) => i);
+  const fmtHour = (h: number) => `${String(h).padStart(2, '0')}:00`;
+
   return (
-    <div style={{ flex: 1, padding: 16, minWidth: 0, position: 'relative' }}>
+    <div style={{ flex: 1, padding: 16, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      {isTimeView && (
+        <div style={settingsBar}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Time range:</span>
+          <button
+            onClick={() => setTimeMode('manual')}
+            style={timeMode === 'manual' ? modeActive : modeInactive}
+          >Manual</button>
+          <button
+            onClick={() => setTimeMode('auto')}
+            style={timeMode === 'auto' ? modeActive : modeInactive}
+          >Auto</button>
+          {timeMode === 'manual' ? (
+            <>
+              <label style={labelStyle}>From:
+                <select value={manualStart} onChange={e => setManualStart(Number(e.target.value))} style={selectStyle}>
+                  {hourOptions.map(h => (
+                    <option key={h} value={h}>{fmtHour(h)}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={labelStyle}>To:
+                <select value={manualEnd} onChange={e => setManualEnd(Number(e.target.value))} style={selectStyle}>
+                  {hourOptions.map(h => (
+                    <option key={h} value={h}>{fmtHour(h)}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <span style={{ fontSize: 12, color: '#666' }}>
+              Showing {fmtHour(autoMinHour)} – {fmtHour(autoMaxHour)} based on this week's events
+            </span>
+          )}
+        </div>
+      )}
       <Calendar
         localizer={localizer}
         events={events}
         defaultView={Views.MONTH}
         views={[Views.MONTH, Views.WEEK, Views.AGENDA]}
-        style={{ height: 'calc(100vh - 130px)' }}
+        style={{ flex: 1, minHeight: 0 }}
         eventPropGetter={eventStyleGetter}
         onRangeChange={handleRangeChange}
         onSelectEvent={e => setSelectedEvent(e.resource)}
         onSelectSlot={handleSelectSlot}
+        onView={setCurrentView}
         selectable
         popup
+        min={isTimeView ? minTime : undefined}
+        max={isTimeView ? maxTime : undefined}
         tooltipAccessor={e => {
           const inst = e.resource;
           return `${inst.title}${inst.assignee ? ` — ${inst.assignee.name}` : ''}${inst.completed ? ' ✓' : ''}`;
@@ -191,6 +264,21 @@ export default function CalendarView({ instances, onRangeChange, onAddChore, onE
     </div>
   );
 }
+
+const settingsBar: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px 8px',
+  fontSize: 13, flexWrap: 'wrap',
+};
+const modeActive: React.CSSProperties = {
+  padding: '3px 10px', background: '#4A90D9', color: '#fff',
+  border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600, fontSize: 12,
+};
+const modeInactive: React.CSSProperties = {
+  padding: '3px 10px', background: '#eee', color: '#444',
+  border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12,
+};
+const labelStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 };
+const selectStyle: React.CSSProperties = { padding: '2px 4px', borderRadius: 3, border: '1px solid #ccc', fontSize: 12 };
 
 const popupOverlay: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
