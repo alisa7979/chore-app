@@ -4,6 +4,9 @@ import { Member, Chore } from '../types';
 interface Props {
   members: Member[];
   initialDate?: string;
+  initialStartTime?: string;
+  initialEndTime?: string;
+  initialDays?: number[];
   editChore?: Chore | null;
   onSave: (data: Omit<Chore, 'id'>) => void;
   onClose: () => void;
@@ -11,14 +14,22 @@ interface Props {
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export default function ChoreModal({ members, initialDate, editChore, onSave, onClose }: Props) {
+export default function ChoreModal({ members, initialDate, initialStartTime, initialEndTime, initialDays, editChore, onSave, onClose }: Props) {
   const [title, setTitle] = useState(editChore?.title ?? '');
   const [description, setDescription] = useState(editChore?.description ?? '');
   const [assigneeId, setAssigneeId] = useState<number | ''>(editChore?.assignee_id ?? '');
   const [recurrence, setRecurrence] = useState<Chore['recurrence']>(editChore?.recurrence ?? 'none');
   const [recurrenceDay, setRecurrenceDay] = useState<number>(editChore?.recurrence_day ?? 0);
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>(() => {
+    if (editChore?.recurrence_days) return JSON.parse(editChore.recurrence_days);
+    if (editChore?.recurrence_day != null) return [editChore.recurrence_day];
+    if (initialDays && initialDays.length > 0) return initialDays;
+    return [0];
+  });
   const [startDate, setStartDate] = useState(editChore?.start_date ?? initialDate ?? new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(editChore?.end_date ?? '');
+  const [startTime, setStartTime] = useState(editChore?.start_time ?? initialStartTime ?? '');
+  const [endTime, setEndTime] = useState(editChore?.end_time ?? initialEndTime ?? '');
 
   useEffect(() => {
     if (editChore) {
@@ -27,21 +38,48 @@ export default function ChoreModal({ members, initialDate, editChore, onSave, on
       setAssigneeId(editChore.assignee_id ?? '');
       setRecurrence(editChore.recurrence);
       setRecurrenceDay(editChore.recurrence_day ?? 0);
+      setRecurrenceDays(
+        editChore.recurrence_days
+          ? JSON.parse(editChore.recurrence_days)
+          : editChore.recurrence_day != null ? [editChore.recurrence_day] : [0]
+      );
       setStartDate(editChore.start_date);
       setEndDate(editChore.end_date ?? '');
+      setStartTime(editChore.start_time ?? '');
+      setEndTime(editChore.end_time ?? '');
     }
   }, [editChore]);
 
+  // When recurrence changes to weekly, pre-select from initialDays if available
+  useEffect(() => {
+    if (recurrence === 'weekly' && !editChore && initialDays && initialDays.length > 0) {
+      setRecurrenceDays(initialDays);
+    }
+  }, [recurrence, editChore, initialDays]);
+
+  const toggleDay = (day: number) => {
+    setRecurrenceDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort()
+    );
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (recurrence === 'weekly' && recurrenceDays.length === 0) {
+      alert('Please select at least one day of the week.');
+      return;
+    }
     onSave({
       title,
       description: description || null,
       assignee_id: assigneeId !== '' ? Number(assigneeId) : null,
       recurrence,
-      recurrence_day: recurrence !== 'none' ? recurrenceDay : null,
+      recurrence_day: recurrence === 'monthly' ? recurrenceDay : null,
+      recurrence_days: recurrence === 'weekly' ? JSON.stringify(recurrenceDays) : null,
       start_date: startDate,
       end_date: endDate || null,
+      start_time: startTime || null,
+      end_time: endTime || null,
     });
   };
 
@@ -72,10 +110,20 @@ export default function ChoreModal({ members, initialDate, editChore, onSave, on
 
           {recurrence === 'weekly' && (
             <>
-              <label style={label}>Day of Week</label>
-              <select style={input} value={recurrenceDay} onChange={e => setRecurrenceDay(Number(e.target.value))}>
-                {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
-              </select>
+              <label style={label}>Days of Week</label>
+              <div style={daysGrid}>
+                {DAYS.map((d, i) => (
+                  <label key={i} style={dayLabel}>
+                    <input
+                      type="checkbox"
+                      checked={recurrenceDays.includes(i)}
+                      onChange={() => toggleDay(i)}
+                      style={{ marginRight: 4 }}
+                    />
+                    {d}
+                  </label>
+                ))}
+              </div>
             </>
           )}
 
@@ -92,6 +140,12 @@ export default function ChoreModal({ members, initialDate, editChore, onSave, on
 
           <label style={label}>End Date (optional)</label>
           <input style={input} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+
+          <label style={label}>Start Time (optional)</label>
+          <input style={input} type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+
+          <label style={label}>End Time (optional)</label>
+          <input style={input} type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button type="submit" style={btnPrimary}>{editChore ? 'Save Changes' : 'Add Chore'}</button>
@@ -113,5 +167,7 @@ const modal: React.CSSProperties = {
 };
 const label: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4, marginTop: 12 };
 const input: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' };
+const daysGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', padding: '8px 0' };
+const dayLabel: React.CSSProperties = { display: 'flex', alignItems: 'center', fontSize: 14, cursor: 'pointer' };
 const btnPrimary: React.CSSProperties = { flex: 1, padding: '9px 0', background: '#4A90D9', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600 };
 const btnSecondary: React.CSSProperties = { flex: 1, padding: '9px 0', background: '#f0f0f0', border: 'none', borderRadius: 4, cursor: 'pointer' };

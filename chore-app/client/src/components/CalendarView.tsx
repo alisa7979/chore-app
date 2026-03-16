@@ -19,6 +19,7 @@ interface CalEvent {
   title: string;
   start: Date;
   end: Date;
+  allDay: boolean;
   resource: ChoreInstance;
 }
 
@@ -26,7 +27,7 @@ interface Props {
   instances: ChoreInstance[];
   members: Member[];
   onRangeChange: (start: string, end: string) => void;
-  onAddChore: (date: string) => void;
+  onAddChore: (slot: { date: string; startTime?: string; endTime?: string; days?: number[] }) => void;
   onEditChore: (chore: Chore) => void;
   onChanged: () => void;
   chores: Chore[];
@@ -36,12 +37,24 @@ export default function CalendarView({ instances, onRangeChange, onAddChore, onE
   const [selectedEvent, setSelectedEvent] = useState<ChoreInstance | null>(null);
 
   const events: CalEvent[] = instances.map(inst => {
-    const d = new Date(inst.due_date + 'T00:00:00');
+    let start: Date, end: Date, allDay: boolean;
+    if (inst.start_time) {
+      start = new Date(`${inst.due_date}T${inst.start_time}:00`);
+      end = inst.end_time
+        ? new Date(`${inst.due_date}T${inst.end_time}:00`)
+        : new Date(start.getTime() + 60 * 60 * 1000);
+      allDay = false;
+    } else {
+      start = new Date(inst.due_date + 'T00:00:00');
+      end = start;
+      allDay = true;
+    }
     return {
       id: `${inst.chore_id}:${inst.due_date}`,
       title: inst.title,
-      start: d,
-      end: d,
+      start,
+      end,
+      allDay,
       resource: inst,
     };
   });
@@ -80,7 +93,25 @@ export default function CalendarView({ instances, onRangeChange, onAddChore, onE
   const handleSelectSlot = useCallback((slot: SlotInfo) => {
     const d = slot.start;
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    onAddChore(iso);
+
+    // Extract time if the slot has a specific time (week/day view clicks)
+    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
+    const startTime = hasTime ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : undefined;
+    const endTime = hasTime && slot.end
+      ? `${String(slot.end.getHours()).padStart(2, '0')}:${String(slot.end.getMinutes()).padStart(2, '0')}`
+      : undefined;
+
+    // Extract unique days of week from multi-slot selection (Mon-based: Mon=0 ... Sun=6)
+    const slotDates: Date[] = Array.isArray(slot.slots) ? slot.slots as Date[] : [slot.start];
+    const daySet = new Set<number>();
+    for (const sd of slotDates) {
+      const jsDay = sd.getDay(); // 0=Sun
+      const monBased = jsDay === 0 ? 6 : jsDay - 1;
+      daySet.add(monBased);
+    }
+    const days = daySet.size > 1 ? Array.from(daySet).sort() : undefined;
+
+    onAddChore({ date: iso, startTime, endTime, days });
   }, [onAddChore]);
 
   const handleToggleComplete = async () => {

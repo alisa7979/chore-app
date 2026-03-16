@@ -36,4 +36,13 @@ db.exec(`
   );
 `);
 
+// Migrations: add new columns if not present
+for (const col of [
+  'ALTER TABLE chores ADD COLUMN recurrence_days TEXT',
+  'ALTER TABLE chores ADD COLUMN start_time TEXT',
+  'ALTER TABLE chores ADD COLUMN end_time TEXT',
+]) {
+  try { db.exec(col); } catch (_) { /* column already exists */ }
+}
+
 export default db;

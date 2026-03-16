@@ -16,7 +16,7 @@ export default function App() {
   const [rangeStart, setRangeStart] = useState(startOfMonth(currentDate).toISOString().slice(0, 10));
   const [rangeEnd, setRangeEnd] = useState(endOfMonth(addMonths(currentDate, 0)).toISOString().slice(0, 10));
   const [showModal, setShowModal] = useState(false);
-  const [modalDate, setModalDate] = useState<string | undefined>();
+  const [modalSlot, setModalSlot] = useState<{ date?: string; startTime?: string; endTime?: string; days?: number[] } | undefined>();
   const [editChore, setEditChore] = useState<Chore | null>(null);
 
   const loadMembers = useCallback(() => getMembers().then(setMembers), []);
@@ -50,19 +50,19 @@ export default function App() {
     }
     setShowModal(false);
     setEditChore(null);
-    setModalDate(undefined);
+    setModalSlot(undefined);
     handleRefreshAll();
   };
 
-  const handleAddChore = (date: string) => {
-    setModalDate(date);
+  const handleAddChore = (slot: { date: string; startTime?: string; endTime?: string; days?: number[] }) => {
+    setModalSlot(slot);
     setEditChore(null);
     setShowModal(true);
   };
 
   const handleEditChore = (chore: Chore) => {
     setEditChore(chore);
-    setModalDate(undefined);
+    setModalSlot(undefined);
     setShowModal(true);
   };
 
@@ -70,7 +70,7 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>
       <header style={header}>
         <span style={{ fontWeight: 700, fontSize: 18 }}>Office Chores</span>
-        <button onClick={() => { setEditChore(null); setModalDate(undefined); setShowModal(true); }} style={addBtn}>
+        <button onClick={() => { setEditChore(null); setModalSlot(undefined); setShowModal(true); }} style={addBtn}>
           + Add Chore
         </button>
       </header>
@@ -93,10 +93,13 @@ export default function App() {
       {showModal && (
         <ChoreModal
           members={members}
-          initialDate={modalDate}
+          initialDate={modalSlot?.date}
+          initialStartTime={modalSlot?.startTime}
+          initialEndTime={modalSlot?.endTime}
+          initialDays={modalSlot?.days}
           editChore={editChore}
           onSave={handleSaveChore}
-          onClose={() => { setShowModal(false); setEditChore(null); setModalDate(undefined); }}
+          onClose={() => { setShowModal(false); setEditChore(null); setModalSlot(undefined); }}
         />
       )}
     </div>

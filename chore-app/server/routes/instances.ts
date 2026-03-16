@@ -36,14 +36,17 @@ function generateDueDates(chore: Chore, rangeStart: string, rangeEnd: string): s
   }
 
   if (chore.recurrence === 'weekly') {
-    const targetDay = chore.recurrence_day ?? 0; // 0=Mon
+    // Support multiple days via recurrence_days (JSON array), fall back to recurrence_day
+    const targetDays: number[] = chore.recurrence_days
+      ? JSON.parse(chore.recurrence_days)
+      : [chore.recurrence_day ?? 0];
     const days = getDaysInRange(effectiveStart, effectiveEnd);
     for (const day of days) {
       const d = new Date(day + 'T00:00:00Z');
       // JS getUTCDay: 0=Sun,1=Mon...6=Sat → convert to Mon=0
       const jsDay = d.getUTCDay();
       const monBasedDay = jsDay === 0 ? 6 : jsDay - 1;
-      if (monBasedDay === targetDay) dates.push(day);
+      if (targetDays.includes(monBasedDay)) dates.push(day);
     }
     return dates;
   }
@@ -93,6 +96,8 @@ router.get('/', (req: Request, res: Response) => {
         description: chore.description,
         assignee: chore.assignee_id ? (memberMap.get(chore.assignee_id) ?? null) : null,
         due_date,
+        start_time: chore.start_time ?? null,
+        end_time: chore.end_time ?? null,
         completed: !!completion,
         completed_at: completion?.completed_at ?? null,
       });
